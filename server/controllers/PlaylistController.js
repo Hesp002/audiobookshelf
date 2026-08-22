@@ -235,14 +235,18 @@ class PlaylistController {
         return aIndex - bIndex
       })
 
-      // Update order on playlistMediaItem records
-      for (const [index, playlistMediaItem] of existingPlaylistMediaItems.entries()) {
-        if (playlistMediaItem.order !== index + 1) {
-          await playlistMediaItem.update({
-            order: index + 1
-          })
-          wasUpdated = true
-        }
+      // Bulk-update order in a single statement instead of one write per item
+      const reordered = existingPlaylistMediaItems.map((pmi, index) => ({
+        id: pmi.id,
+        playlistId: pmi.playlistId,
+        mediaItemId: pmi.mediaItemId,
+        mediaItemType: pmi.mediaItemType,
+        order: index + 1
+      }))
+      const hasOrderChange = existingPlaylistMediaItems.some((pmi, index) => pmi.order !== index + 1)
+      if (hasOrderChange) {
+        await Database.playlistMediaItemModel.bulkCreate(reordered, { updateOnDuplicate: ['order'] })
+        wasUpdated = true
       }
     }
 
