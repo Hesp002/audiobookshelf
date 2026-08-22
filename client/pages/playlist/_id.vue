@@ -19,6 +19,8 @@
               {{ streaming ? $strings.ButtonPlaying : $strings.ButtonPlayAll }}
             </ui-btn>
 
+            <ui-icon-btn v-if="playlistItems.length > 1" icon="checklist" class="mx-0.5" :class="isSelectionMode ? 'text-yellow-400' : ''" @click="toggleSelectionMode" />
+
             <ui-icon-btn icon="edit" class="mx-0.5" @click="editClick" />
 
             <ui-icon-btn icon="delete" class="mx-0.5" @click="removeClick" />
@@ -28,7 +30,7 @@
             <p class="text-base text-gray-100">{{ description }}</p>
           </div>
 
-          <tables-playlist-items-table :items="playlistItems" :playlist-id="playlistId" />
+          <tables-playlist-items-table :items="playlistItems" :playlist-id="playlistId" :selection-mode-active.sync="isSelectionMode" />
         </div>
       </div>
     </div>
@@ -64,7 +66,8 @@ export default {
   },
   data() {
     return {
-      processingRemove: false
+      processingRemove: false,
+      isSelectionMode: false
     }
   },
   computed: {
@@ -105,6 +108,9 @@ export default {
     }
   },
   methods: {
+    toggleSelectionMode() {
+      this.isSelectionMode = !this.isSelectionMode
+    },
     editClick() {
       this.$store.commit('globals/setEditPlaylist', this.playlist)
     },

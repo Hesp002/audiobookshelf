@@ -122,7 +122,7 @@ export default {
     loadPlaylists() {
       this.processing = true
       this.$axios
-        .$get(`/api/libraries/${this.currentLibraryId}/playlists`)
+        .$get(`/api/libraries/${this.currentLibraryId}/playlists?forModal=1`)
         .then((data) => {
           this.$store.commit('libraries/setUserPlaylists', data.results || [])
         })

@@ -88,6 +88,195 @@ class Playlist extends Model {
   }
 
   /**
+   * Get playlist id/name pairs for a user and library.
+   * Use this instead of getOldPlaylistsForUserAndLibrary when only names are needed.
+   *
+   * @param {string} userId
+   * @param {string} libraryId
+   * @returns {Promise<{id: string, name: string}[]>}
+   */
+  static async getPlaylistNamesForUserAndLibrary(userId, libraryId) {
+    const where = {}
+    if (userId) where.userId = userId
+    if (libraryId) where.libraryId = libraryId
+    const playlists = await this.findAll({ where, attributes: ['id', 'name'], order: [['name', 'ASC']] })
+    return playlists.map((p) => ({ id: p.id, name: p.name }))
+  }
+
+  /**
+   * Get paginated playlists with only the first 4 items per playlist (cover mosaic data only).
+   * Use this for the bookshelf listing view where full item data is not needed.
+   *
+   * @param {string} userId
+   * @param {string} libraryId
+   * @param {number} limit
+   * @param {number} offset
+   * @returns {Promise<{total: number, results: object[]}>}
+   */
+  static async getPlaylistsMinifiedForUserAndLibrary(userId, libraryId, limit, offset) {
+    const where = {}
+    if (userId) where.userId = userId
+    if (libraryId) where.libraryId = libraryId
+
+    const findOpts = { where, attributes: ['id', 'name', 'libraryId', 'userId', 'description', 'createdAt', 'updatedAt'], order: [['name', 'ASC']] }
+    if (limit) {
+      findOpts.limit = limit
+      findOpts.offset = offset || 0
+    }
+
+    const { count, rows: playlists } = await this.findAndCountAll(findOpts)
+    if (!playlists.length) return { total: count, results: [] }
+
+    // Load the first 4 items per playlist (for cover mosaic) with minimal data
+    const coverItemsPerPlaylist = await Promise.all(
+      playlists.map((p) =>
+        this.sequelize.models.playlistMediaItem.findAll({
+          where: { playlistId: p.id },
+          attributes: ['playlistId', 'mediaItemId', 'mediaItemType', 'order'],
+          include: [
+            {
+              model: this.sequelize.models.book,
+              attributes: ['id', 'coverPath'],
+              required: false,
+              include: [{ model: this.sequelize.models.libraryItem, attributes: ['id', 'updatedAt'] }]
+            },
+            {
+              model: this.sequelize.models.podcastEpisode,
+              attributes: ['id'],
+              required: false,
+              include: [
+                {
+                  model: this.sequelize.models.podcast,
+                  attributes: ['id', 'coverPath'],
+                  include: [{ model: this.sequelize.models.libraryItem, attributes: ['id', 'updatedAt'] }]
+                }
+              ]
+            }
+          ],
+          order: [['order', 'ASC']],
+          limit: 4
+        })
+      )
+    )
+
+    const results = playlists.map((playlist, idx) => {
+      const items = coverItemsPerPlaylist[idx]
+        .map((pmi) => {
+          if (pmi.mediaItemType === 'book') {
+            const book = pmi.mediaItem
+            if (!book?.libraryItem) return null
+            return {
+              libraryItemId: book.libraryItem.id,
+              libraryItem: { id: book.libraryItem.id, updatedAt: book.libraryItem.updatedAt, media: { coverPath: book.coverPath || null } }
+            }
+          }
+          const podcast = pmi.mediaItem?.podcast
+          if (!podcast?.libraryItem) return null
+          return {
+            episodeId: pmi.mediaItemId,
+            libraryItemId: podcast.libraryItem.id,
+            libraryItem: { id: podcast.libraryItem.id, updatedAt: podcast.libraryItem.updatedAt, media: { coverPath: podcast.coverPath || null } }
+          }
+        })
+        .filter(Boolean)
+
+      return {
+        id: playlist.id,
+        name: playlist.name,
+        libraryId: playlist.libraryId,
+        userId: playlist.userId,
+        description: playlist.description || null,
+        lastUpdate: playlist.updatedAt.valueOf(),
+        createdAt: playlist.createdAt.valueOf(),
+        items
+      }
+    })
+
+    return { total: count, results }
+  }
+
+  /**
+   * Get all playlists with all item IDs and minimal cover data, for the "add to playlist" modal.
+   * Returns all items per playlist (not capped at 4) so the modal can check membership accurately,
+   * but loads only id/coverPath instead of full episode/book/libraryItem expansions.
+   *
+   * @param {string} userId
+   * @param {string} libraryId
+   * @returns {Promise<object[]>}
+   */
+  static async getPlaylistsForAddModalForUserAndLibrary(userId, libraryId) {
+    const where = {}
+    if (userId) where.userId = userId
+    if (libraryId) where.libraryId = libraryId
+
+    const playlists = await this.findAll({ where, attributes: ['id', 'name', 'libraryId', 'userId', 'description', 'createdAt', 'updatedAt'], order: [['name', 'ASC']] })
+    if (!playlists.length) return []
+
+    const allItems = await Promise.all(
+      playlists.map((p) =>
+        this.sequelize.models.playlistMediaItem.findAll({
+          where: { playlistId: p.id },
+          attributes: ['playlistId', 'mediaItemId', 'mediaItemType', 'order'],
+          include: [
+            {
+              model: this.sequelize.models.book,
+              attributes: ['id', 'coverPath'],
+              required: false,
+              include: [{ model: this.sequelize.models.libraryItem, attributes: ['id', 'updatedAt'] }]
+            },
+            {
+              model: this.sequelize.models.podcastEpisode,
+              attributes: ['id'],
+              required: false,
+              include: [
+                {
+                  model: this.sequelize.models.podcast,
+                  attributes: ['id', 'coverPath'],
+                  include: [{ model: this.sequelize.models.libraryItem, attributes: ['id', 'updatedAt'] }]
+                }
+              ]
+            }
+          ],
+          order: [['order', 'ASC']]
+        })
+      )
+    )
+
+    return playlists.map((playlist, idx) => {
+      const items = allItems[idx]
+        .map((pmi) => {
+          if (pmi.mediaItemType === 'book') {
+            const book = pmi.mediaItem
+            if (!book?.libraryItem) return null
+            return {
+              libraryItemId: book.libraryItem.id,
+              libraryItem: { id: book.libraryItem.id, updatedAt: book.libraryItem.updatedAt, media: { coverPath: book.coverPath || null } }
+            }
+          }
+          const podcast = pmi.mediaItem?.podcast
+          if (!podcast?.libraryItem) return null
+          return {
+            episodeId: pmi.mediaItemId,
+            libraryItemId: podcast.libraryItem.id,
+            libraryItem: { id: podcast.libraryItem.id, updatedAt: podcast.libraryItem.updatedAt, media: { coverPath: podcast.coverPath || null } }
+          }
+        })
+        .filter(Boolean)
+
+      return {
+        id: playlist.id,
+        name: playlist.name,
+        libraryId: playlist.libraryId,
+        userId: playlist.userId,
+        description: playlist.description || null,
+        lastUpdate: playlist.updatedAt.valueOf(),
+        createdAt: playlist.createdAt.valueOf(),
+        items
+      }
+    })
+  }
+
+  /**
    * Get number of playlists for a user and library
    * @param {string} userId
    * @param {string} libraryId
@@ -260,6 +449,25 @@ class Playlist extends Model {
             return pmi
           })
         }
+      }
+    })
+
+    Playlist.addHook('afterDestroy', async (instance) => {
+      // Clean up dangling references from podcasts configured to auto-add episodes to this playlist
+      const Podcast = sequelize.models.podcast
+      const podcastsWithPlaylist = await Podcast.findAll({
+        where: {
+          autoAddToPlaylistIds: {
+            [Op.like]: `%"${instance.id}"%`
+          }
+        }
+      })
+      for (const podcast of podcastsWithPlaylist) {
+        if (!podcast.autoAddToPlaylistIds?.includes(instance.id)) continue
+        const newIds = podcast.autoAddToPlaylistIds.filter((id) => id !== instance.id)
+        podcast.autoAddToPlaylistIds = newIds.length ? newIds : null
+        await podcast.save()
+        Logger.info(`[Playlist] Removed deleted playlist ${instance.id} from podcast "${podcast.title}" auto-add-to-playlist list`)
       }
     })
   }
