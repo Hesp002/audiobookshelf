@@ -31,6 +31,33 @@
 
         <widgets-cron-expression-builder ref="cronExpressionBuilder" v-if="enableAutoDownloadEpisodes" v-model="cronExpression" />
       </template>
+
+      <div class="mt-6 pt-6 border-t border-white/10">
+        <p class="text-base md:text-xl font-semibold mb-4">{{ $strings.HeaderAutoAddToPlaylist }}</p>
+        <div class="flex items-center gap-3">
+          <div class="relative w-64" v-click-outside="closePlaylistMenu">
+            <button @click="playlistMenuOpen = !playlistMenuOpen" :disabled="loadingPlaylists" class="w-full flex items-center justify-between gap-2 text-sm px-3 py-2 border border-gray-500 rounded hover:border-gray-400 text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+              <span class="truncate">{{ selectedPlaylistLabel }}</span>
+              <span class="material-symbols text-sm shrink-0">{{ playlistMenuOpen ? 'expand_less' : 'expand_more' }}</span>
+            </button>
+            <ul v-show="playlistMenuOpen" class="absolute z-20 left-0 mt-1 w-full bg-bg border border-gray-600 rounded shadow-lg text-sm py-1 max-h-48 overflow-y-auto">
+              <li v-if="!playlists.length && !loadingPlaylists" class="px-3 py-1.5 text-gray-400 italic">
+                {{ $strings.MessageNoUserPlaylists }}
+              </li>
+              <li
+                v-for="playlist in playlists"
+                :key="playlist.id"
+                @click="togglePlaylist(playlist.id)"
+                class="px-3 py-1.5 cursor-pointer hover:bg-white/5 flex items-center gap-2 text-gray-200"
+              >
+                <ui-checkbox :value="newAutoAddToPlaylistIds.includes(playlist.id)" @input="togglePlaylist(playlist.id)" checkbox-bg="bg" small />
+                <span class="truncate">{{ playlist.name }}</span>
+              </li>
+            </ul>
+          </div>
+          <p class="text-sm text-gray-400">{{ $strings.LabelAutoAddToPlaylistHelp }}</p>
+        </div>
+      </div>
     </div>
 
     <div v-if="feedUrl || autoDownloadEpisodes" class="absolute bottom-0 left-0 w-full py-2 md:py-4 bg-bg border-t border-white/5">
@@ -56,7 +83,11 @@ export default {
       enableAutoDownloadEpisodes: false,
       cronExpression: null,
       newMaxEpisodesToKeep: 0,
-      newMaxNewEpisodesToDownload: 0
+      newMaxNewEpisodesToDownload: 0,
+      newAutoAddToPlaylistIds: [],
+      playlists: [],
+      loadingPlaylists: false,
+      playlistMenuOpen: false
     }
   },
   watch: {
@@ -88,6 +119,9 @@ export default {
     libraryItemId() {
       return this.libraryItem ? this.libraryItem.id : null
     },
+    libraryId() {
+      return this.libraryItem ? this.libraryItem.libraryId : null
+    },
     feedUrl() {
       return this.mediaMetadata.feedUrl
     },
@@ -103,11 +137,39 @@ export default {
     maxNewEpisodesToDownload() {
       return this.media.maxNewEpisodesToDownload
     },
+    autoAddToPlaylistIds() {
+      return this.media.autoAddToPlaylistIds || []
+    },
     isUpdated() {
-      return this.autoDownloadSchedule !== this.cronExpression || this.autoDownloadEpisodes !== this.enableAutoDownloadEpisodes || this.maxEpisodesToKeep !== Number(this.newMaxEpisodesToKeep) || this.maxNewEpisodesToDownload !== Number(this.newMaxNewEpisodesToDownload)
+      return (
+        this.autoDownloadSchedule !== this.cronExpression ||
+        this.autoDownloadEpisodes !== this.enableAutoDownloadEpisodes ||
+        this.maxEpisodesToKeep !== Number(this.newMaxEpisodesToKeep) ||
+        this.maxNewEpisodesToDownload !== Number(this.newMaxNewEpisodesToDownload) ||
+        JSON.stringify(this.autoAddToPlaylistIds.slice().sort()) !== JSON.stringify(this.newAutoAddToPlaylistIds.slice().sort())
+      )
+    },
+    selectedPlaylistLabel() {
+      if (this.loadingPlaylists) return '...'
+      if (!this.newAutoAddToPlaylistIds.length) return this.$strings.LabelNone
+      if (this.newAutoAddToPlaylistIds.length === 1) {
+        const playlist = this.playlists.find((p) => p.id === this.newAutoAddToPlaylistIds[0])
+        return playlist ? playlist.name : this.$strings.LabelNone
+      }
+      return this.$getString('LabelCountPlaylists', [this.newAutoAddToPlaylistIds.length])
     }
   },
   methods: {
+    closePlaylistMenu() {
+      this.playlistMenuOpen = false
+    },
+    togglePlaylist(id) {
+      if (this.newAutoAddToPlaylistIds.includes(id)) {
+        this.newAutoAddToPlaylistIds = this.newAutoAddToPlaylistIds.filter((pid) => pid !== id)
+      } else {
+        this.newAutoAddToPlaylistIds = [...this.newAutoAddToPlaylistIds, id]
+      }
+    },
     updatedMaxEpisodesToKeep() {
       if (isNaN(this.newMaxEpisodesToKeep) || this.newMaxEpisodesToKeep < 0) {
         this.newMaxEpisodesToKeep = 0
@@ -138,7 +200,8 @@ export default {
       }
 
       const updatePayload = {
-        autoDownloadEpisodes: this.enableAutoDownloadEpisodes
+        autoDownloadEpisodes: this.enableAutoDownloadEpisodes,
+        autoAddToPlaylistIds: this.newAutoAddToPlaylistIds
       }
       if (this.enableAutoDownloadEpisodes) {
         updatePayload.autoDownloadSchedule = this.cronExpression
@@ -173,11 +236,25 @@ export default {
       }
       return false
     },
+    async loadPlaylists() {
+      if (!this.libraryId) return
+      this.loadingPlaylists = true
+      try {
+        const data = await this.$axios.$get(`/api/libraries/${this.libraryId}/playlists?namesOnly=1`)
+        this.playlists = data.results || []
+      } catch (error) {
+        console.error('Failed to load playlists', error)
+      } finally {
+        this.loadingPlaylists = false
+      }
+    },
     init() {
       this.enableAutoDownloadEpisodes = this.autoDownloadEpisodes
       this.cronExpression = this.autoDownloadSchedule
       this.newMaxEpisodesToKeep = this.maxEpisodesToKeep
       this.newMaxNewEpisodesToDownload = this.maxNewEpisodesToDownload
+      this.newAutoAddToPlaylistIds = [...this.autoAddToPlaylistIds]
+      this.loadPlaylists()
     }
   },
   mounted() {

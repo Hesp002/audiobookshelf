@@ -39,6 +39,12 @@ module.exports = {
     base: routerBasePath
   },
 
+  // Top-of-page loading bar shown during route navigation: https://go.nuxtjs.dev/config-loading
+  loading: {
+    color: '#facc15',
+    height: '3px'
+  },
+
   // Global CSS: https://go.nuxtjs.dev/config-css
   css: ['@/assets/tailwind.css', '@/assets/app.css'],
 

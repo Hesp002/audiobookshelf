@@ -255,12 +255,53 @@ class PodcastManager {
     podcastEpisodeExpanded.libraryItem = libraryItem.toOldJSONExpanded()
     SocketAuthority.emitter('episode_added', podcastEpisodeExpanded)
 
+    if (libraryItem.media.autoAddToPlaylistIds?.length) {
+      for (const playlistId of libraryItem.media.autoAddToPlaylistIds) {
+        await this.addEpisodeToAutoPlaylist(libraryItem, podcastEpisode, playlistId)
+      }
+    }
+
     if (this.currentDownload.isAutoDownload) {
       // Notifications only for auto downloaded episodes
       NotificationManager.onPodcastEpisodeDownloaded(libraryItem, podcastEpisode)
     }
 
     return true
+  }
+
+  /**
+   * Add a newly downloaded episode to the podcast's configured auto-add playlist.
+   * Appends to the bottom of the playlist (highest order value).
+   *
+   * @param {import('../models/LibraryItem').LibraryItemExpanded} libraryItem
+   * @param {import('../models/PodcastEpisode')} podcastEpisode
+   * @param {string} playlistId
+   */
+  async addEpisodeToAutoPlaylist(libraryItem, podcastEpisode, playlistId) {
+    const playlist = await Database.playlistModel.findByPk(playlistId, {
+      include: [{ model: Database.playlistMediaItemModel }]
+    })
+    if (!playlist) {
+      Logger.warn(`[PodcastManager] Auto-add playlist ${playlistId} not found for podcast "${libraryItem.media.title}"`)
+      return
+    }
+    if (playlist.libraryId !== libraryItem.libraryId) {
+      Logger.warn(`[PodcastManager] Auto-add playlist library mismatch for podcast "${libraryItem.media.title}"`)
+      return
+    }
+
+    const alreadyInPlaylist = playlist.playlistMediaItems?.some((pmi) => pmi.mediaItemId === podcastEpisode.id)
+    if (alreadyInPlaylist) return
+
+    const order = (playlist.playlistMediaItems?.length || 0) + 1
+    await Database.playlistMediaItemModel.create({
+      playlistId: playlist.id,
+      mediaItemId: podcastEpisode.id,
+      mediaItemType: 'podcastEpisode',
+      order
+    })
+
+    Logger.info(`[PodcastManager] Auto-added episode "${podcastEpisode.title}" to playlist "${playlist.name}"`)
   }
 
   /**

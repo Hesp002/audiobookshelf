@@ -1,18 +1,20 @@
 <template>
-  <div class="w-full px-1 md:px-2 py-2 overflow-hidden relative" @mouseover="mouseover" @mouseleave="mouseleave" :class="isHovering ? 'bg-white/5' : ''">
+  <div class="w-full px-1 md:px-2 py-2 overflow-hidden relative" @mouseover="mouseover" @mouseleave="mouseleave" :class="[isHovering && !isSelected ? 'bg-white/5' : '', isSelected ? 'bg-white/10' : '']" @click="rowClick">
     <div v-if="item" class="flex h-16 md:h-20">
-      <div class="w-10 min-w-10 md:w-16 md:max-w-16 h-full">
+      <div class="w-10 min-w-10 md:w-16 md:max-w-16 h-full" @click.stop>
         <div class="flex h-full items-center justify-center">
-          <span class="material-symbols drag-handle text-lg md:text-xl">menu</span>
+          <ui-checkbox v-if="isSelectionMode" :value="isSelected" @input="toggleSelect" checkbox-bg="primary" small />
+          <span v-else class="material-symbols drag-handle text-lg md:text-xl">menu</span>
         </div>
       </div>
       <div class="h-full relative flex items-center" :style="{ width: coverWidth + 'px', minWidth: coverWidth + 'px', maxWidth: coverWidth + 'px' }">
         <covers-book-cover :library-item="libraryItem" :width="coverWidth" :book-cover-aspect-ratio="bookCoverAspectRatio" />
-        <div class="absolute top-0 left-0 bg-black/50 flex items-center justify-center h-full w-full z-10" v-show="isHovering && showPlayBtn">
+        <div class="absolute top-0 left-0 bg-black/50 flex items-center justify-center h-full w-full z-10" v-show="isHovering && showPlayBtn && !isSelectionMode">
           <div class="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/40 cursor-pointer" @click="playClick">
             <span class="material-symbols fill text-2xl">play_arrow</span>
           </div>
         </div>
+        <div v-if="isSelected" class="absolute top-0 left-0 bg-black/40 h-full w-full pointer-events-none" />
       </div>
       <div class="grow overflow-hidden max-w-48 md:max-w-md h-full flex items-center px-2 md:px-3">
         <div>
@@ -30,7 +32,7 @@
         </div>
       </div>
     </div>
-    <div class="w-40 absolute top-0 -right-24 h-full transform transition-transform" :class="!isHovering ? 'translate-x-0' : translateDistance">
+    <div v-if="!isSelectionMode" class="w-40 absolute top-0 -right-24 h-full transform transition-transform" :class="!isHovering ? 'translate-x-0' : translateDistance">
       <div class="flex h-full items-center">
         <ui-tooltip :text="userIsFinished ? $strings.MessageMarkAsNotFinished : $strings.MessageMarkAsFinished" direction="top">
           <ui-read-icon-btn :disabled="isProcessingReadUpdate" :is-read="userIsFinished" borderless class="mx-1 mt-0.5" @click="toggleFinished" />
@@ -55,7 +57,9 @@ export default {
       default: () => {}
     },
     isDragging: Boolean,
-    bookCoverAspectRatio: Number
+    bookCoverAspectRatio: Number,
+    isSelectionMode: Boolean,
+    isSelected: Boolean
   },
   data() {
     return {
@@ -142,6 +146,14 @@ export default {
     }
   },
   methods: {
+    rowClick() {
+      if (this.isSelectionMode) {
+        this.$emit('select', { item: this.item, isSelected: !this.isSelected })
+      }
+    },
+    toggleSelect(val) {
+      this.$emit('select', { item: this.item, isSelected: val })
+    },
     mouseover() {
       if (this.isDragging) return
       this.isHovering = true

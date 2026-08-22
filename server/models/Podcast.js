@@ -65,6 +65,8 @@ class Podcast extends Model {
     this.updatedAt
     /** @type {number} */
     this.numEpisodes
+    /** @type {string[]|null} */
+    this.autoAddToPlaylistIds
 
     /** @type {import('./PodcastEpisode')[]} */
     this.podcastEpisodes
@@ -154,7 +156,23 @@ class Podcast extends Model {
         coverPath: DataTypes.STRING,
         tags: DataTypes.JSON,
         genres: DataTypes.JSON,
-        numEpisodes: DataTypes.INTEGER
+        numEpisodes: DataTypes.INTEGER,
+        autoAddToPlaylistIds: {
+          type: DataTypes.TEXT,
+          allowNull: true,
+          get() {
+            const raw = this.getDataValue('autoAddToPlaylistIds')
+            if (!raw) return null
+            try {
+              return JSON.parse(raw)
+            } catch {
+              return null
+            }
+          },
+          set(val) {
+            this.setDataValue('autoAddToPlaylistIds', val?.length ? JSON.stringify(val) : null)
+          }
+        }
       },
       {
         sequelize,
@@ -290,6 +308,15 @@ class Podcast extends Model {
         hasUpdates = true
       }
     })
+
+    if ('autoAddToPlaylistIds' in payload) {
+      const newVal = Array.isArray(payload.autoAddToPlaylistIds) ? payload.autoAddToPlaylistIds.filter(Boolean) : []
+      const current = this.autoAddToPlaylistIds || []
+      if (JSON.stringify(newVal) !== JSON.stringify(current)) {
+        this.autoAddToPlaylistIds = newVal.length ? newVal : null
+        hasUpdates = true
+      }
+    }
 
     if (hasUpdates) {
       Logger.debug(`[Podcast] changed keys:`, this.changed())
@@ -447,7 +474,8 @@ class Podcast extends Model {
       autoDownloadSchedule: this.autoDownloadSchedule,
       lastEpisodeCheck: this.lastEpisodeCheck?.valueOf() || null,
       maxEpisodesToKeep: this.maxEpisodesToKeep,
-      maxNewEpisodesToDownload: this.maxNewEpisodesToDownload
+      maxNewEpisodesToDownload: this.maxNewEpisodesToDownload,
+      autoAddToPlaylistIds: this.autoAddToPlaylistIds || []
     }
   }
 
@@ -469,6 +497,7 @@ class Podcast extends Model {
       lastEpisodeCheck: this.lastEpisodeCheck?.valueOf() || null,
       maxEpisodesToKeep: this.maxEpisodesToKeep,
       maxNewEpisodesToDownload: this.maxNewEpisodesToDownload,
+      autoAddToPlaylistIds: this.autoAddToPlaylistIds || [],
       size: this.size
     }
   }
